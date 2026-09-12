@@ -1,0 +1,38 @@
+{
+  "terrain": {
+    "discriminator": "kind",
+    "groups": {
+      "default": [
+        "forest",
+        "swamp",
+        "cavern",
+        "ruins"
+      ]
+    }
+  },
+  "roomName": {
+    "discriminator": "terrain",
+    "groups": {
+      "forest": [
+        "Moss Hall",
+        "Briar Den",
+        "Sunken Lodge"
+      ],
+      "swamp": [
+        "Murk Gallery",
+        "Reed Vault",
+        "Bog Shrine"
+      ],
+      "cavern": [
+        "Echo Gate",
+        "Shard Court",
+        "Basalt Wake"
+      ],
+      "ruins": [
+        "Broken Atrium",
+        "Ash Archive",
+        "Silent Forum"
+      ]
+    }
+  }
+}

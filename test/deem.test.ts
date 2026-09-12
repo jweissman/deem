@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'bun:test';
 import Deem from '../src/deem';
-import { DeemValue } from '../src/deem/stdlib';
+import { type DeemValue } from '../src/stdlib';
+import Generator from '../src/Generator';
+import { Template } from '../src/Template';
 
 const expectDeem = (expression: string, expected: any) => {
   it(`evaluates ${expression} to be ${expected}`, () => {
@@ -96,5 +98,88 @@ describe('Deem', () => {
 
     // does NOT interpolate single-quoted strings
     expect(Deem.evaluate("'The sum of 2 and 3 is #{2 + 3} and the product of 3 and 4 is #{3 * 4}'")).toBe('The sum of 2 and 3 is #{2 + 3} and the product of 3 and 4 is #{3 * 4}');
+  });
+
+  describe('instance-seeded runtime', () => {
+    it('produces identical sequences with the same seed', () => {
+      const left = new Deem({ seed: 'same-seed' });
+      const right = new Deem({ seed: 'same-seed' });
+
+      const leftResults = [
+        left.evaluate('rand()'),
+        left.evaluate('oneOf(alpha, beta, gamma)'),
+        left.evaluate('2d6'),
+        left.evaluate('alliterate(concat(apple, apricot, berry), apricot)'),
+      ];
+      const rightResults = [
+        right.evaluate('rand()'),
+        right.evaluate('oneOf(alpha, beta, gamma)'),
+        right.evaluate('2d6'),
+        right.evaluate('alliterate(concat(apple, apricot, berry), apricot)'),
+      ];
+
+      expect(leftResults).toEqual(rightResults);
+    });
+
+    it('uses independent RNG streams per instance', () => {
+      const first = new Deem({ seed: 'stream-seed' });
+      const second = new Deem({ seed: 'stream-seed' });
+
+      first.evaluate('rand()');
+      first.evaluate('rand()');
+
+      const a = first.evaluate('rand()') as number;
+      const b = second.evaluate('rand()') as number;
+      expect(a).not.toBe(b);
+    });
+  });
+
+  describe('contextual stdlib reentrancy', () => {
+    it('does not leak nested evaluation context back into caller', () => {
+      const holder: { runtime: Deem | null } = { runtime: null };
+      holder.runtime = new Deem({
+        contextualStdlib: (context) => ({
+          ctx: (name: DeemValue) => {
+            if (typeof name !== 'string') {
+              throw new Error('ctx(name) expects a string key');
+            }
+            return context[name] ?? null;
+          },
+          gen: (key: DeemValue) => {
+            if (typeof key !== 'string') {
+              throw new Error('gen(key) expects a string key');
+            }
+            return holder.runtime?.evaluate('ctx(inner)', { inner: `nested:${key}` }) ?? null;
+          },
+        }),
+      });
+
+      const value = holder.runtime.evaluate('ctx(outer) + "|" + gen(foo) + "|" + ctx(outer)', {
+        outer: 'OUTER',
+      });
+
+      expect(value).toBe('OUTER|nested:foo|OUTER');
+    });
+  });
+
+  describe('template and generator integration', () => {
+    it('produces deterministic output with the same seed', () => {
+      const first = Generator.gen('room', { seed: 'room-seed' });
+      const second = Generator.gen('room', { seed: 'room-seed' });
+      expect(first).toEqual(second);
+    });
+
+    it('keeps outer context stable across nested gen calls in one expression', () => {
+      const custom = new Template('module', {
+        label: '=oneOf(outerA, outerB, outerC)',
+        final: '=if(defined(label) && gen(encounter) != nihil && defined(label), #label, missing)',
+      });
+
+      const result = custom.assembleProperties({
+        seed: 'nested-seed',
+      }) as Record<string, DeemValue>;
+
+      expect(result.final).toBe(result.label);
+    });
   });
 });

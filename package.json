@@ -1,14 +1,32 @@
 {
   "name": "deem",
   "module": "index.ts",
+  "bin": {
+    "deem": "./bin/deem.ts"
+  },
   "type": "module",
+  "scripts": {
+    "deem": "bun run ./bin/deem.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "coverage": "bun test --coverage",
+    "check": "bun run lint && bun run typecheck && bun run test && bun run coverage"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@eslint/js": "^9.35.0",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@types/bun": "latest",
+    "eslint-plugin-no-comments": "^1.2.1",
+    "jiti": "^2.7.0",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.43.0"
   },
   "peerDependencies": {
-    "typescript": "^7"
+    "typescript": ">=6 <8"
   },
   "dependencies": {
+    "eslint": "^9.35.0",
     "ohm-js": "^17.5.0"
   }
 }

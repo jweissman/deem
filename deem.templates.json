@@ -1,0 +1,13 @@
+{
+  "encounter": {
+    "name": "=oneOf(\"Goblin Scouts\", \"Lost Pilgrims\", \"Bandit Cell\")",
+    "danger": "=oneOf(low, medium, high)"
+  },
+  "room": {
+    "_terrain": "=pick(gatherEntries(terrain, default), 0)",
+    "name": "=lookup(roomName, #_terrain)",
+    "hasEncounter": "=rand() > 0.35",
+    "encounter": "=if(#hasEncounter, gen(encounter), nihil)",
+    "summary": "=#name + \" in \" + #_terrain"
+  }
+}

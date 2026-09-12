@@ -2,6 +2,58 @@
 
 A tiny template-based generative DSL.
 
+## CLI
+
+This package now includes a `deem` CLI.
+
+### Initialize a runnable example
+
+Run this in an empty folder (or use `--force` to overwrite existing files):
+
+```bash
+deem init ./example --scenario default
+```
+
+This writes:
+
+- `data/default/tables/deem.tables.json`
+- `data/default/templates/deem.templates.json`
+- `deem.run.json`
+
+### Generate from the CLI
+
+```bash
+deem run --settingDir ./example
+```
+
+Optional flags:
+
+- `--type <template>`
+- `--seed <seed>`
+- `--count <n>`
+- `--scenario <name>`
+- `--config <path>`
+- `--tables <path>`
+- `--templates <path>`
+- `--settingDir <dir>`
+- `--trace` (prints execution trace)
+- `--trace-format <pretty|raw>` (default `pretty`)
+- `--allow-default-setting` (fallback to built-in setting if scenario files are missing)
+
+### Validate configuration
+
+```bash
+deem validate --settingDir ./example
+```
+
+Validation checks:
+
+- run config shape (`deem.run.json`)
+- required generation type (from config or `--type`)
+- tables and templates JSON structure
+- scenario path resolution
+- generation type exists in the resolved setting
+
 ## Tables
 
 Tables are lists organized by a 'discriminator' or category.

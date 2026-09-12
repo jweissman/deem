@@ -1,4 +1,5 @@
 import * as ohm from 'ohm-js';
+// @ts-expect-error Bun text imports are resolved at runtime.
 import source from './deem.ohm' with { type: "text" };
 import StandardLibrary, { type DeemFunc, type DeemValue } from './stdlib';
 
@@ -9,16 +10,52 @@ type EvalArgs = { context?: EvalContext };
 type EvalSemantics = { eval: (context: EvalContext) => DeemValue };
 type EvalNode = ohm.Node & EvalSemantics;
 
-export default class Deem {
-  static magicVars: Record<string, DeemValue> = {};
-  static colorize = (str: string, color: string) => `\x1b[${color}m${str}\x1b[0m`;
-  static stdlib: { [key: string]: DeemFunc } = {
-    ...StandardLibrary.core,
-    ...StandardLibrary.probability('default-seed'),
-  }
-  static grammar = ohm.grammar(source);
+type DeemOptions = {
+  seed?: string | number;
+  magicVars?: Record<string, DeemValue>;
+  stdlib?: Record<string, DeemFunc>;
+  contextualStdlib?: (context: EvalContext) => Record<string, DeemFunc>;
+};
 
-  static semantics = Deem.grammar.createSemantics().addOperation<DeemValue>('eval(context)', {
+export default class Deem {
+  static colorize = (str: string, color: string) => `\x1b[${color}m${str}\x1b[0m`;
+  static grammar = ohm.grammar(source);
+  static defaultInstance = new Deem();
+
+  magicVars: Record<string, DeemValue>;
+  stdlib: { [key: string]: DeemFunc };
+  private contextualStdlib: (context: EvalContext) => Record<string, DeemFunc>;
+  private semantics;
+
+  constructor(options: DeemOptions = {}) {
+    this.magicVars = options.magicVars ?? {};
+    this.stdlib = {
+      ...StandardLibrary.core,
+      ...StandardLibrary.probability(options.seed ?? 'default-seed'),
+      ...(options.stdlib ?? {}),
+    };
+    this.contextualStdlib = options.contextualStdlib ?? (() => ({}));
+    this.semantics = this.createSemantics();
+  }
+
+  private resolveStdlib(context: EvalContext): { [key: string]: DeemFunc } {
+    return {
+      ...this.stdlib,
+      ...this.contextualStdlib(context),
+    };
+  }
+
+  private requireFunction(name: string, context: EvalContext): DeemFunc {
+    const func = this.resolveStdlib(context)[name];
+    if (!func) {
+      throw new Error(`Unknown function: ${name}`);
+    }
+    return func;
+  }
+
+  private createSemantics() {
+    const runtime = this;
+    return Deem.grammar.createSemantics().addOperation<DeemValue>('eval(context)', {
     Exp(exp) {
       const ctx = (this.args as EvalArgs).context || {};
       return (exp as EvalNode).eval(ctx);
@@ -130,19 +167,9 @@ export default class Deem {
         const argValue = (arg as EvalNode).eval(ctx);
         args.push(argValue);
       }
-      const lib: { [key: string]: DeemFunc } = Deem.stdlib;
-      //   ...Deem.stdlib
-      //   // ...StandardLibrary.probability(ctx.seed as string)
-      //   // ...StandardLibrary.meta(ctx as Record<string, DeemValue>)
-      // }
-      // debugger;
-      const func = lib[funcName];
-      if (!func) {
-        throw new Error(`Unknown function: ${funcName}`);
-      }
+      const func = runtime.requireFunction(funcName, ctx);
 
       let ret = null;
-      // @ts-expect-error -- ignore due to dynamic function call and unpredictable tuple type --
       ret = func(...args.flat());
       return ret;
     },
@@ -165,12 +192,12 @@ export default class Deem {
       const ctx = (this.args as EvalArgs).context || {}
       if (name.startsWith('#')) {
         const key = name.slice(1);
-        const value = (this.args as EvalArgs).context?.[key] ?? Deem.magicVars[key];
+        const value = (this.args as EvalArgs).context?.[key] ?? runtime.magicVars[key];
         if (value === undefined) {
           if (Object.keys(ctx).includes(key)) {
             return null;
           }
-          throw new Error(`Undefined variable: ${key} (available: ${Object.keys(ctx).join(', ')}); (magic: ${Object.keys(Deem.magicVars).join(', ')})`);
+          throw new Error(`Undefined variable: ${key} (available: ${Object.keys(ctx).join(', ')}); (magic: ${Object.keys(runtime.magicVars).join(', ')})`);
         }
         return value as DeemValue;
       }
@@ -191,8 +218,8 @@ export default class Deem {
       while ((match = regex.exec(raw)) !== null) {
         const before = raw.slice(cursor, match.index);
         result += before;
-        const expr = match[1];
-        const exprValue = Deem.evaluate(expr, ctx) as string;
+        const expr = match[1] ?? '';
+        const exprValue = runtime.evaluate(expr, ctx) as string;
         result += exprValue;
         cursor = match.index + match[0].length;
       }
@@ -200,10 +227,10 @@ export default class Deem {
       // interpolate #variables
       result = result.replace(/#([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, varName) => {
         const variable = String(varName);
-        const value = ctx[variable] ?? Deem.magicVars[variable];
+        const value = ctx[variable] ?? runtime.magicVars[variable];
         if (value === undefined) {
           // debugger;
-          throw new Error(`Undefined variable in string interpolation: ${varName} (available: ${Object.keys((this.args as EvalArgs).context || {}).join(', ')}); (magic: ${Object.keys(Deem.magicVars).join(', ')})`);
+          throw new Error(`Undefined variable in string interpolation: ${varName} (available: ${Object.keys((this.args as EvalArgs).context || {}).join(', ')}); (magic: ${Object.keys(runtime.magicVars).join(', ')})`);
         }
         return value as string;
       });
@@ -225,9 +252,9 @@ export default class Deem {
       //   return sum;
       // }
 
-      // const rolls = Array.from({ length: parseInt(count.sourceString) }, () => Math.floor(Math.random() * parseInt(sides.sourceString)) + 1);
-      // const sum = rolls.reduce((a, b) => a + b, 0);
-      return Deem.stdlib.roll(parseInt(count.sourceString) as unknown as DeemValue, parseInt(sides.sourceString) as unknown as DeemValue) as DeemValue;
+      const ctx = (this.args as EvalArgs).context || {};
+      const roll = runtime.requireFunction('roll', ctx);
+      return roll(parseInt(count.sourceString), parseInt(sides.sourceString)) as DeemValue;
     },
     dice_single(_d, sides) {
       // const ctx = (this.args as EvalArgs).context || {};
@@ -240,7 +267,9 @@ export default class Deem {
       //   );
       //   return result.amount;
       // }
-      return Deem.stdlib.roll(1, parseInt(sides.sourceString) as unknown as DeemValue);
+      const ctx = (this.args as EvalArgs).context || {};
+      const roll = runtime.requireFunction('roll', ctx);
+      return roll(1, parseInt(sides.sourceString));
       // return Math.floor(
       //   // Math.random() * parseInt(sides.sourceString)
       //   Deem.stdlib.rand(parseInt(sides.sourceString))
@@ -291,10 +320,18 @@ export default class Deem {
     dice_multi(count, _d, sides) { return `${count.sourceString}d${sides.sourceString}`; },
     dice_single(_d, sides) { return `d${sides.sourceString}`; }
   });
+  }
 
   static evaluate(
     expression: string,
-    context: Record<string, DeemValue | Roll | Combatant> = {}
+    context: Record<string, DeemValue> = {}
+  ): DeemValue {
+    return Deem.defaultInstance.evaluate(expression, context);
+  }
+
+  evaluate(
+    expression: string,
+    context: Record<string, DeemValue> = {}
   ): DeemValue {
     if (expression === null || expression === undefined || expression.trim() === '') {
       throw new Error('Cannot evaluate empty expression');
@@ -305,10 +342,10 @@ export default class Deem {
       expression = expression.slice(1);
     }
 
-    const match = this.grammar.match(expression);
+    const match = Deem.grammar.match(expression);
     if (match.succeeded()) {
       const sem = this.semantics(match) as {
-        eval: (context: Record<string, DeemValue | Roll | Combatant>) => DeemValue
+        eval: (context: Record<string, DeemValue>) => DeemValue
       };
       // const prettyExpr: string = sem.pretty as string;
       let ret: DeemValue = null;

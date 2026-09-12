@@ -1,11 +1,10 @@
 // import { WordCorruptor } from '../linguistics/Corruptor';
 // import LanguageManager, { Concept, ConceptKind, conceptKinds, Conceptory, ConceptTemplate } from '../orsino/Language';
 // import { Fighting } from '../orsino/rules/Fighting';
-// import Words from '../orsino/tui/Words';
+import Words from './words';
 
 export type DeemValue = string | number | boolean | null | DeemValue[] | { [key: string]: DeemValue };
-export type DeemFunc = ((...args: DeemValue[]) => DeemValue)
-  | ((arr: DeemValue[], ...args: DeemValue[]) => DeemValue)
+export type DeemFunc = (...args: any[]) => DeemValue;
 
 export default class StandardLibrary {
   static rand = (seed: string | number) => {
@@ -16,7 +15,7 @@ export default class StandardLibrary {
       s += 0x6D2B79F5;
       let t = Math.imul(s ^ s >>> 15, 1 | s);
       t ^= t + Math.imul(t ^ t >>> 7, 61 | t);
-      let val = ((t ^ t >>> 14) >>> 0) / 4294967296;
+      const val = ((t ^ t >>> 14) >>> 0) / 4294967296;
       if (max > 0) {
         return Math.floor(val * max);
       }
@@ -26,24 +25,29 @@ export default class StandardLibrary {
   }
 
   static probability = (seed: string | number = 'default-seed'): Record<string, DeemFunc> => {
-    console.warn(`Creating probability functions with seed: ${seed}`);
     const randFunc = StandardLibrary.rand(seed);
     return {
       rand: randFunc,
       oneOf: (...args: DeemValue[]) => {
+        if (args.length === 0) {
+          throw new Error('oneOf() expects at least one argument');
+        }
         const picked = args[Math.floor(randFunc() * args.length)];
         // console.warn("Deem StandardLibrary.probabilityFunctions.oneOf(): picked=", picked);
-        return picked;
+        return picked ?? null;
       },
       pick: (arr: DeemValue[], index: DeemValue = -1) => {
         if (!Array.isArray(arr)) {
           throw new Error(`pick() expects an array, got: ${typeof arr}`);
         }
+        if (arr.length === 0) {
+          return null;
+        }
         if (index === -1) {
-          return arr[Math.floor(randFunc() * arr.length)]
+          return arr[Math.floor(randFunc() * arr.length)] ?? null;
         } else {
           if (typeof index === 'number') {
-            return arr[index % arr.length];
+            return arr[index % arr.length] ?? null;
           } else {
             throw new Error(`pick() received invalid index: ${JSON.stringify(index)} (type: ${typeof index})`);
           }
@@ -59,7 +63,10 @@ export default class StandardLibrary {
         const arrCopy = [...arr];
         for (let i = 0; i < count && arrCopy.length > 0; i++) {
           const index = Math.floor(randFunc() * arrCopy.length);
-          sampled.push(arrCopy.splice(index, 1)[0]);
+          const next = arrCopy.splice(index, 1)[0];
+          if (next !== undefined) {
+            sampled.push(next);
+          }
         }
         return sampled;
       },
@@ -80,6 +87,20 @@ export default class StandardLibrary {
         rolls.sort((a, b) => a - b);
         rolls.shift(); // drop the lowest
         return rolls.reduce((a, b) => a + b, 0);
+      },
+      alliterate: (options: DeemValue[], key: DeemValue) => {
+        if (typeof key !== 'string') {
+          throw new Error(`alliterate() expects key to be a string, got: ${typeof key}`);
+        }
+        if (!options.every(opt => typeof opt === 'string')) {
+          throw new Error(`alliterate() expects all options to be strings, got: [${options.map(i => typeof i).join(', ')}]`);
+        }
+        const firstChar = key.charAt(0).toLowerCase();
+        const filtered = options.filter(opt => (opt).charAt(0).toLowerCase() === firstChar);
+        if (filtered.length > 0) {
+          return filtered[Math.floor(randFunc() * filtered.length)] ?? null;
+        }
+        return options[Math.floor(randFunc() * options.length)] ?? null;
       },
     }
   }
@@ -306,36 +327,18 @@ export default class StandardLibrary {
       return (items as string[]).join(separator);
     },
 
-    alliterate: (options: DeemValue[], key: DeemValue) => {
-      if (typeof key !== 'string') {
-        console.warn(`alliterate() received non-string key: ${JSON.stringify(key)}`);
-        throw new Error(`alliterate() expects key to be a string, got: ${typeof key}`);
-      }
-      if (!options.every(opt => typeof opt === 'string')) {
-        throw new Error(`alliterate() expects all options to be strings, got: [${options.map(i => typeof i).join(', ')}]`);
-      }
-      const firstChar = key.charAt(0).toLowerCase();
-      const filtered = options.filter(opt => (opt).charAt(0).toLowerCase() === firstChar);
-      if (filtered.length > 0) {
-        return filtered[Math.floor(Math.random() * filtered.length)];
-      } else {
-        // no matching alliteration, pick any
-        return options[Math.floor(Math.random() * options.length)];
-      }
-    },
-
     first: (arr: DeemValue[]) => {
       if (!Array.isArray(arr)) {
         throw new Error(`first() expects an array, got: ${typeof arr}`);
       }
-      return arr.length > 0 ? arr[0] : null;
+      return arr.length > 0 ? (arr[0] ?? null) : null;
     },
 
     last: (arr: DeemValue[]) => {
       if (!Array.isArray(arr)) {
         throw new Error(`last() expects an array, got: ${typeof arr}`);
       }
-      return arr.length > 0 ? arr[arr.length - 1] : null;
+      return arr.length > 0 ? (arr[arr.length - 1] ?? null) : null;
     },
 
     roman: (num: DeemValue) => {
@@ -371,30 +374,6 @@ export default class StandardLibrary {
       return result;
     }
 
-    // find: (arr: DeemValue[], prop: DeemValue, value: DeemValue) => {
-    //   if (!Array.isArray(arr)) {
-    //     throw new Error(`find() expects an array, got: ${typeof arr}`);
-    //   }
-    //   if (typeof prop !== 'string') {
-    //     throw new Error(`find() expects property name to be a string, got: ${typeof prop}`);
-    //   }
-    //   console.log(`find(): searching for items with ${prop} === ${JSON.stringify(value)} [list length: ${arr.length}]`);
-    //   const options = arr.filter(item => {
-    //     console.log(`find(): checking item: ${JSON.stringify(item)} (value of ${prop}: ${typeof item === 'object' && item !== null && prop in item ? JSON.stringify((item as { [key: string]: DeemValue })[prop]) : 'N/A'})`);
-    //     if (typeof item === 'object' && item !== null && prop in item) {
-    //       const it = item as { [key: string]: DeemValue };
-    //       return it[prop] === value;
-    //     }
-    //     return false;
-    //   }) || null;
-
-    //   console.log(`find(): found ${options.length} matching items.`);
-    //   if (options.length === 0) {
-    //     throw new Error(`find() could not find any items with ${prop} === ${JSON.stringify(value)}`);
-    //     return null;
-    //   }
-    //   return options[Math.floor(Math.random() * options.length)];
-    // }
   };
 
   // static meta: (context: Record<string, DeemValue>) => Record<string, DeemFunc> = (context) => {
