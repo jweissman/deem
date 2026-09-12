@@ -1,0 +1,88 @@
+Deem {
+  Exp = LogExp
+
+  LogExp
+    = LogExp "&&" CompExp  -- and
+    | LogExp "||" CompExp  -- or
+    | "!" LogExp           -- not
+    | TernaryExp           -- ternary
+    | CompExp
+
+  TernaryExp
+    = CompExp "?" Exp ":" Exp
+
+  CompExp
+    = CompExp "<" AddExp   -- lt
+    | CompExp ">" AddExp   -- gt
+    | CompExp "==" AddExp  -- eq
+    | CompExp "!=" AddExp  -- neq
+    | CompExp "<=" AddExp  -- lte
+    | CompExp ">=" AddExp  -- gte
+    | AddExp
+
+  AddExp
+    = AddExp "+" MulExp  -- plus
+    | AddExp "-" MulExp  -- minus
+    | MulExp
+
+  MulExp
+    = MulExp "*" ExpExp  -- times
+    | MulExp "/" ExpExp  -- divide
+    | ExpExp
+
+  ExpExp
+    = PriExp "^" ExpExp  -- power
+    | PriExp
+
+  PriExp
+    = "(" Exp ")"  -- paren
+    | "+" PriExp   -- pos
+    | "-" PriExp   -- neg
+    | FunctionCall
+    | strlit
+    | nihil
+    | bool
+    | ident
+    | dice
+    | number
+
+  FunctionCall
+    = ident "(" ArgList? ")"
+  
+  ArgList
+    = Exp ("," Exp)*
+
+  strlit
+    = "\"" (double_quoted_char)* "\"" -- double_quote
+    | "'" (single_quoted_char)* "'"   -- single_quote
+
+  bool
+    = "true" | "false"
+  
+  nihil
+    = "nihil"
+
+  dice
+    = number "d" number -- multi
+    | "d" number        -- single
+
+  ident  (an identifier)
+    = (letter | octothorpe) id_char*
+  
+  id_char
+    = letter | digit | octothorpe | underscore
+
+  underscore
+    = "_"
+
+  octothorpe
+    = "#"
+
+  number  (a number)
+    = digit* "." digit+  -- fract
+    | digit+             -- whole
+
+  double_quoted_char = ~"\"" any
+
+  single_quoted_char = ~"'" any
+}
