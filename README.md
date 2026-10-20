@@ -76,6 +76,8 @@ Use Deem's builtin `lookup` to extract values (ie `lookup(hitPoints, "thief")` w
 
 If the value is an array, lookup will sample randomly, so that you can also use this to createbias tables.
 
+A row may carry a frequency instead of being repeated: `{"__weight": 3, "kind": "wolf"}` draws exactly as three copies of the row (without the `__weight` field), and `{"__weight": 5, "__value": "animal"}` weights a plain value. Weights must be positive integers.
+
 ## Templates
 
 Templates are plain JSON objects whose values can have _Deem_ expressions. Any key whose valueis prefixed by `=` will be evaluated during generation. Consider this template that shows off a lot of the capabilities:
@@ -185,10 +187,14 @@ There is also a special directive `__no_id` which omits the generation of a temp
 - `hasEntry(tableName, value)` returns true if there is any group with key `value`
 - `hasValue(tableName, value)` returns true if any group contains `value` in its list
 - `findGroup(tableName, value)` does a reverse lookup of the group in a table from the value list
+- `gatherEntries(tableName, group)` returns a group's entries; `default` (when the table has no group of that name) returns every entry
+- `select(tableName, group, predicate)` selects as `lookup` does among rows for which the single-quoted predicate holds (the candidate is `#__it`), and fails when none does
 
 ### List helpers
 - `concat(item1, item2...)` flattens all arguments into a single array and removes null/undefined
 - `uniq(arr)` returns only unique items from an array
+- `except(list, removed)` returns the elements of `list` that are not in `removed`
+- `definedOf(names)` returns the names that are defined in the current context. Together with the table helpers this asks whether a candidate owns every requested dimension: `select(families, any, 'count(definedOf(except(gatherEntries(owners, "default"), gatherEntries(owners, #__it)))) == 0')`
 - `distribute(total, parts)` returns an array distributing the total value into buckets (countof buckets given by `parts`)
 
 ### Value extraction
@@ -198,7 +204,7 @@ There is also a special directive `__no_id` which omits the generation of a temp
 - `oneOf(item1, item2...)`: select randomly from a list
 - `pick(arr)`: select randomly from an array
 - `sample(arr, count)`: sample `count` elements from a population given by `array`
-- `rand()`: random number between 0 and 1
+- `rand()`: random number between 0 and 1. String seeds are hashed (FNV-1a), so distinct strings, anagrams included, give distinct streams
 - `roll(dieCount, dieSides)` rolls a die of `dieSides` faces `dieCount` times
 - `rollWithDrop(dieCount, dieSides)` rolls a die of `dieSides` faces `dieCount` times, dropping the lowest value
 
@@ -217,6 +223,10 @@ There is also a special directive `__no_id` which omits the generation of a temp
 
 `Deem` instances also expose `parse`, `partialEvaluate`, `explain`, `preview`,
 `serialize`, and `execute`. Existing `evaluate` behavior is unchanged.
+
+Previews evaluate core functions only. A supplied function that is deterministic and side-effect free can be declared
+pure, so previews fold it: `new Deem({ stdlib: { statMod }, pure: ['statMod'] }).preview('statMod(#strength) + 1d6',
+{ strength: 14 })` gives `2 + 1d6`.
 
 ```ts
 const deem = new Deem({ seed: 'combat' });
