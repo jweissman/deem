@@ -16,6 +16,8 @@ type DeemOptions = {
   magicVars?: Record<string, DeemValue>;
   stdlib?: Record<string, DeemFunc>;
   contextualStdlib?: (context: EvalContext) => Record<string, DeemFunc>;
+  // Supplied functions that are deterministic and side-effect free, so previews may evaluate them.
+  pure?: string[];
 };
 
 export default class Deem {
@@ -47,6 +49,7 @@ export default class Deem {
 
   constructor(options: DeemOptions = {}) {
     this.previewContextual = options.contextualStdlib !== undefined;
+    this.pure = new Set((options.pure ?? []).filter(name => options.stdlib?.[name]));
     this.magicVars = options.magicVars ?? {};
     this.stdlib = {
       ...StandardLibrary.core,
@@ -356,13 +359,14 @@ export default class Deem {
     if (expr.kind !== 'operation') { return true; }
     if (expr.operator.startsWith('call:')) {
       const name = expr.operator.slice(5);
-      if (this.previewContextual || !Object.hasOwn(StandardLibrary.core, name)
-        || this.stdlib[name] !== StandardLibrary.core[name]) { return false; }
+      const core = Object.hasOwn(StandardLibrary.core, name) && this.stdlib[name] === StandardLibrary.core[name];
+      if (this.previewContextual || !(core || this.pure.has(name))) { return false; }
     }
     return expr.args.every(arg => this.previewSafe(arg));
   }
 
   private previewRoll: DeemFunc;
+  private pure: Set<string>;
 
   partialEvaluate(input: string | Expression, context: EvalContext = {}): PartialResult {
     let expression: Expression | undefined;

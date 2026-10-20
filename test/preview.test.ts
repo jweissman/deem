@@ -103,3 +103,12 @@ describe('expression previews', () => {
     expect(d.explain('#strength > 12').text).toContain('strength is greater than 12');
   });
 });
+
+it('folds supplied functions declared pure, and only those', () => {
+  const stdlib = { statMod: (s: unknown) => Math.round(((s as number) - 10) / 2), noisy: () => Math.random() };
+  const pure = new Deem({ seed: 1, stdlib, pure: ['statMod'] });
+  expect(pure.preview('max(0, statMod(#strength) + 1d6)', { strength: 14 })).toMatchObject({
+    explanation: { text: 'max(0, (2 + 1d6))' } });
+  expect(pure.preview('noisy() + 1', {}).status).toBe('residual');
+  expect(new Deem({ seed: 1, stdlib }).preview('statMod(#strength)', { strength: 14 }).status).toBe('residual');
+});
