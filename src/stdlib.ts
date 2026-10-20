@@ -7,9 +7,15 @@ export type DeemValue = string | number | boolean | null | DeemValue[] | { [key:
 export type DeemFunc = (...args: any[]) => DeemValue;
 
 export default class StandardLibrary {
+  // FNV-1a over UTF-16 code units: distinct strings, including anagrams, seed distinct streams.
+  static hash(seed: string): number {
+    let hash = 2166136261;
+    for (const char of seed) { hash = Math.imul(hash ^ char.charCodeAt(0), 16777619); }
+    return hash >>> 0;
+  }
   static rand = (seed: string | number) => {
     // simple seeded random generator (mulberry32)
-    let s = typeof seed === 'number' ? seed : [...seed].reduce((a, b) => a + b.charCodeAt(0), 0);
+    let s = typeof seed === 'number' ? seed : StandardLibrary.hash(seed);
     // console.warn(`Creating seeded random function with seed: ${seed} (numeric value: ${s})`);
     return function (max: number=-1) {
       s += 0x6D2B79F5;

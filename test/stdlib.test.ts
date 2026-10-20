@@ -11,6 +11,12 @@ describe('StandardLibrary probability', () => {
     expect(a(10) as number).toBeLessThan(10);
   });
 
+  it('seeds distinct streams from strings with the same characters', () => {
+    const draws = (seed: string) => { const r = StandardLibrary.probability(seed).rand!; return [r(), r(), r()]; };
+    expect(draws('choice-12')).not.toEqual(draws('choice-21'));
+    expect(draws('ab')).not.toEqual(draws('ba'));
+  });
+
   it('covers oneOf pick sample roll rollWithDrop alliterate', () => {
     const pRaw = StandardLibrary.probability('seed-b');
     const p = {

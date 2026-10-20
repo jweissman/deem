@@ -23,13 +23,27 @@ export default class Deem {
   static grammar = ohm.grammar(source);
   static defaultInstance = new Deem();
 
-  private previewSemantics = ExpressionTools.semantics(Deem.grammar);
+  private static previewSemanticsCache?: ReturnType<typeof ExpressionTools.semantics>;
+  private get previewSemantics() { return Deem.previewSemanticsCache ??= ExpressionTools.semantics(Deem.grammar); }
+  private static sharedSemantics?: ReturnType<typeof Deem.createSemantics>;
+  private static active?: Deem;
+  private get semantics() { return Deem.sharedSemantics ??= Deem.createSemantics(); }
+  // Parsed expressions by source text; templates evaluate the same expressions many times.
+  private static parsed = new Map<string, ohm.MatchResult>();
+  static parse(expression: string): ohm.MatchResult {
+    let match = Deem.parsed.get(expression);
+    if (!match) {
+      match = Deem.grammar.match(expression);
+      if (Deem.parsed.size >= 10000) { Deem.parsed.clear(); }
+      Deem.parsed.set(expression, match);
+    }
+    return match;
+  }
   private previewContextual: boolean;
 
   magicVars: Record<string, DeemValue>;
   stdlib: { [key: string]: DeemFunc };
   private contextualStdlib: (context: EvalContext) => Record<string, DeemFunc>;
-  private semantics;
 
   constructor(options: DeemOptions = {}) {
     this.previewContextual = options.contextualStdlib !== undefined;
@@ -41,7 +55,6 @@ export default class Deem {
     };
     this.previewRoll = this.stdlib.roll!;
     this.contextualStdlib = options.contextualStdlib ?? (() => ({}));
-    this.semantics = this.createSemantics();
   }
 
   private resolveStdlib(context: EvalContext): { [key: string]: DeemFunc } {
@@ -59,8 +72,9 @@ export default class Deem {
     return func;
   }
 
-  private createSemantics() {
-    const runtime = this;
+  // One semantics serves every instance; the instance evaluating is `Deem.active`.
+  private static createSemantics() {
+    const runtime = { get active() { return Deem.active!; } };
     return Deem.grammar.createSemantics().addOperation<DeemValue>('eval(context)', {
     Exp(exp) {
       const ctx = (this.args as EvalArgs).context || {};
@@ -173,7 +187,7 @@ export default class Deem {
         const argValue = (arg as EvalNode).eval(ctx);
         args.push(argValue);
       }
-      const func = runtime.requireFunction(funcName, ctx);
+      const func = runtime.active.requireFunction(funcName, ctx);
 
       let ret = null;
       ret = func(...args.flat());
@@ -198,12 +212,12 @@ export default class Deem {
       const ctx = (this.args as EvalArgs).context || {}
       if (name.startsWith('#')) {
         const key = name.slice(1);
-        const value = (this.args as EvalArgs).context?.[key] ?? runtime.magicVars[key];
+        const value = (this.args as EvalArgs).context?.[key] ?? runtime.active.magicVars[key];
         if (value === undefined) {
           if (Object.keys(ctx).includes(key)) {
             return null;
           }
-          throw new Error(`Undefined variable: ${key} (available: ${Object.keys(ctx).join(', ')}); (magic: ${Object.keys(runtime.magicVars).join(', ')})`);
+          throw new Error(`Undefined variable: ${key} (available: ${Object.keys(ctx).join(', ')}); (magic: ${Object.keys(runtime.active.magicVars).join(', ')})`);
         }
         return value as DeemValue;
       }
@@ -225,7 +239,7 @@ export default class Deem {
         const before = raw.slice(cursor, match.index);
         result += before;
         const expr = match[1] ?? '';
-        const exprValue = runtime.evaluate(expr, ctx) as string;
+        const exprValue = runtime.active.evaluate(expr, ctx) as string;
         result += exprValue;
         cursor = match.index + match[0].length;
       }
@@ -233,10 +247,10 @@ export default class Deem {
       // interpolate #variables
       result = result.replace(/#([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, varName) => {
         const variable = String(varName);
-        const value = ctx[variable] ?? runtime.magicVars[variable];
+        const value = ctx[variable] ?? runtime.active.magicVars[variable];
         if (value === undefined) {
           // debugger;
-          throw new Error(`Undefined variable in string interpolation: ${varName} (available: ${Object.keys((this.args as EvalArgs).context || {}).join(', ')}); (magic: ${Object.keys(runtime.magicVars).join(', ')})`);
+          throw new Error(`Undefined variable in string interpolation: ${varName} (available: ${Object.keys((this.args as EvalArgs).context || {}).join(', ')}); (magic: ${Object.keys(runtime.active.magicVars).join(', ')})`);
         }
         return value as string;
       });
@@ -259,7 +273,7 @@ export default class Deem {
       // }
 
       const ctx = (this.args as EvalArgs).context || {};
-      const roll = runtime.requireFunction('roll', ctx);
+      const roll = runtime.active.requireFunction('roll', ctx);
       return roll(parseInt(count.sourceString), parseInt(sides.sourceString)) as DeemValue;
     },
     dice_single(_d, sides) {
@@ -274,7 +288,7 @@ export default class Deem {
       //   return result.amount;
       // }
       const ctx = (this.args as EvalArgs).context || {};
-      const roll = runtime.requireFunction('roll', ctx);
+      const roll = runtime.active.requireFunction('roll', ctx);
       return roll(1, parseInt(sides.sourceString));
       // return Math.floor(
       //   // Math.random() * parseInt(sides.sourceString)
@@ -329,7 +343,7 @@ export default class Deem {
   }
 
   parse(expression: string): Expression {
-    const match = Deem.grammar.match(expression.startsWith('=') ? expression.slice(1) : expression);
+    const match = Deem.parse(expression.startsWith('=') ? expression.slice(1) : expression);
     if (match.failed()) { throw new Error(match.message); }
     return (this.previewSemantics(match) as { tree: Expression }).tree;
   }
@@ -424,18 +438,22 @@ export default class Deem {
       expression = expression.slice(1);
     }
 
-    const match = Deem.grammar.match(expression);
+    const match = Deem.parse(expression);
     if (match.succeeded()) {
       const sem = this.semantics(match) as {
         eval: (context: Record<string, DeemValue>) => DeemValue
       };
       // const prettyExpr: string = sem.pretty as string;
       let ret: DeemValue = null;
+      const previous = Deem.active;
+      Deem.active = this;
       try {
         ret = sem.eval(context);
       } catch (e) {
         console.warn("Error evaluating expression:", expression);
         throw new Error(`Error evaluating expression: ${expression}\n${(e as Error).message}`);
+      } finally {
+        Deem.active = previous;
       }
       return ret;
     } else {
