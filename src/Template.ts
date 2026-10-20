@@ -39,6 +39,12 @@ export class Template {
           }
           return activeContext[varName] !== undefined;
         },
+        definedOf: (names: DeemValue) => {
+          if (!Array.isArray(names) || names.some(n => typeof n !== 'string')) {
+            throw new Error('definedOf() expects a list of names');
+          }
+          return names.filter(n => activeContext[n as string] !== undefined);
+        },
         lookup: ((
           tableName: GenerationTemplateType, groupName: string, condition?: string
         ) => {

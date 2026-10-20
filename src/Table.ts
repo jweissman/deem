@@ -28,7 +28,8 @@ export class Table {
   }
 
   gatherEntries(groupName: string, count: number = -1, randomFunc: (maxValue: number) => number = (max) => Math.floor(Math.random() * max)): DeemValue[] {
-    const group = this.groups[groupName];
+    // As in lookup and select, 'default' means every entry unless the table has a group of that name.
+    const group = this.groups[groupName] ?? (groupName === 'default' ? Object.values(this.groups).flat() : undefined);
     if (group === undefined) {
       throw new Error(`Group not found in table ${this.discriminator} (group: ${groupName})`);
     }

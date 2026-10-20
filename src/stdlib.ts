@@ -243,6 +243,11 @@ export default class StandardLibrary {
       return Math.max(...args)
     },
     concat: (...args: DeemValue[]) => args.flat().filter((x) => x !== null && x !== undefined),
+    // The elements of the first list that are not in the second.
+    except: (list: DeemValue, removed: DeemValue) => {
+      if (!Array.isArray(list) || !Array.isArray(removed)) { throw new Error('except() expects two lists'); }
+      return list.filter(x => !removed.includes(x));
+    },
 
     // statMod: (stat: DeemValue) => {
     //   if (typeof stat !== 'number') {

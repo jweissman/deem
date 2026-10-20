@@ -36,3 +36,23 @@ it('gen accepts scoped object overrides without changing inheritance or adding p
   expect(Generator.gen('child', options)).toEqual({ level: 1, inherited: 'forest' });
   expect(() => runtime.evaluate('gen(child, 3)', { terrain: 'forest' })).toThrow('parameters must be an object');
 });
+
+it('selects only candidates that own every requested dimension', () => {
+  const setting = {
+    owners: new Table('owners', 'family').group('dragon', ['lineage', 'maturity']).group('humanoid', ['classId'])
+      .group('animal', []),
+    families: new Table('families', 'terrain').group('any', ['animal', 'humanoid', 'dragon']),
+    pick: new Template('pick', { __no_id: true, family: `=select(families, any,
+      'count(definedOf(except(gatherEntries(owners, "default"), gatherEntries(owners, #__it)))) == 0')` }),
+  };
+  const runtime = Template.bootstrapDeem({ seed: 'owners' }, setting);
+  const pick = (request: Record<string, string>) =>
+    Generator.gen('pick', { __setting: setting, __deemRuntime: runtime, ...request } as Parameters<typeof Generator.gen>[1]);
+  for (let i = 0; i < 8; i++) {
+    expect(pick({ lineage: 'red' })).toEqual({ family: 'dragon' });
+    expect(pick({ classId: 'ranger' })).toEqual({ family: 'humanoid' });
+  }
+  expect(() => pick({ lineage: 'red', classId: 'ranger' })).toThrow('No matching options');
+  expect(runtime.evaluate('gatherEntries(owners, default)', {})).toEqual(['lineage', 'maturity', 'classId']);
+  expect(runtime.evaluate('except(gatherEntries(owners, default), gatherEntries(owners, dragon))', {})).toEqual(['classId']);
+});
