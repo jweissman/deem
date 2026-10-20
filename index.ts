@@ -5,3 +5,4 @@ export { Template } from './src/Template';
 export { Table } from './src/Table';
 export { buildSetting, defaultScaffold, initProject, runGeneration, validateProject } from './src/cli';
 export type { DeemFunc, DeemValue } from './src/stdlib';
+export type { Expression, PartialResult, Bounds, Explanation, ExplainStyle } from './src/preview';

@@ -1,3 +1,4 @@
+import { ExpressionTools, type Expression, type PartialResult, type ExplainStyle } from './preview';
 import * as ohm from 'ohm-js';
 // @ts-expect-error Bun text imports are resolved at runtime.
 import source from './deem.ohm' with { type: "text" };
@@ -22,18 +23,23 @@ export default class Deem {
   static grammar = ohm.grammar(source);
   static defaultInstance = new Deem();
 
+  private previewSemantics = ExpressionTools.semantics(Deem.grammar);
+  private previewContextual: boolean;
+
   magicVars: Record<string, DeemValue>;
   stdlib: { [key: string]: DeemFunc };
   private contextualStdlib: (context: EvalContext) => Record<string, DeemFunc>;
   private semantics;
 
   constructor(options: DeemOptions = {}) {
+    this.previewContextual = options.contextualStdlib !== undefined;
     this.magicVars = options.magicVars ?? {};
     this.stdlib = {
       ...StandardLibrary.core,
       ...StandardLibrary.probability(options.seed ?? 'default-seed'),
       ...(options.stdlib ?? {}),
     };
+    this.previewRoll = this.stdlib.roll!;
     this.contextualStdlib = options.contextualStdlib ?? (() => ({}));
     this.semantics = this.createSemantics();
   }
@@ -320,6 +326,82 @@ export default class Deem {
     dice_multi(count, _d, sides) { return `${count.sourceString}d${sides.sourceString}`; },
     dice_single(_d, sides) { return `d${sides.sourceString}`; }
   });
+  }
+
+  parse(expression: string): Expression {
+    const match = Deem.grammar.match(expression.startsWith('=') ? expression.slice(1) : expression);
+    if (match.failed()) { throw new Error(match.message); }
+    return (this.previewSemantics(match) as { tree: Expression }).tree;
+  }
+
+  private previewSafe(expr: Expression): boolean {
+    if (expr.kind === 'opaque') { return false; }
+    if (expr.kind === 'dice') {
+      return !this.previewContextual && this.stdlib.roll === this.previewRoll;
+    }
+    if (expr.kind !== 'operation') { return true; }
+    if (expr.operator.startsWith('call:')) {
+      const name = expr.operator.slice(5);
+      if (this.previewContextual || !Object.hasOwn(StandardLibrary.core, name)
+        || this.stdlib[name] !== StandardLibrary.core[name]) { return false; }
+    }
+    return expr.args.every(arg => this.previewSafe(arg));
+  }
+
+  private previewRoll: DeemFunc;
+
+  partialEvaluate(input: string | Expression, context: EvalContext = {}): PartialResult {
+    let expression: Expression | undefined;
+    try {
+      expression = typeof input === 'string' ? this.parse(input) : input;
+      if (!this.previewSafe(expression)) { return { status: 'residual', expression }; }
+      const resolve = (name: string): Expression => {
+        if (!Object.hasOwn(context, name) && !Object.hasOwn(this.magicVars, name)) {
+          return { kind: 'reference', name };
+        }
+        // Match the legacy evaluator's nullish fallback, including explicit undefined.
+        const value = context[name] ?? this.magicVars[name];
+        if (value === undefined && !Object.keys(context).includes(name)) {
+          throw new Error(`Undefined variable: ${name}`);
+        }
+        return { kind: 'value', value: value === undefined ? null : value };
+      };
+      expression = ExpressionTools.specialize(expression, resolve, expr => this.execute(expr));
+      return expression.kind === 'value'
+        ? { status: 'value', expression, value: expression.value }
+        : { status: 'residual', expression };
+    } catch (error) {
+      return { status: 'error', expression, error: error instanceof Error ? error : new Error(String(error)) };
+    }
+  }
+
+  serialize(expression: Expression, context: EvalContext = {}) {
+    const bindings: EvalContext = { ...context };
+    const reserved = new Set(Object.keys(this.magicVars));
+    const visit = (expr: Expression): void => {
+      if (expr.kind === 'reference') { reserved.add(expr.name); }
+      if (expr.kind === 'opaque') {
+        for (const match of expr.source.matchAll(/#([a-zA-Z0-9_#]+)/g)) { reserved.add(match[1]!); }
+      }
+      if (expr.kind === 'operation') { expr.args.forEach(visit); }
+    };
+    visit(expression);
+    return { source: ExpressionTools.serialize(expression, bindings, reserved), context: bindings };
+  }
+
+  execute(expression: Expression, context: EvalContext = {}): DeemValue {
+    const serialized = this.serialize(expression, context);
+    return this.evaluate(serialized.source, serialized.context);
+  }
+
+  explain(input: string | Expression, style: ExplainStyle = 'compact') {
+    const expression = typeof input === 'string' ? this.parse(input) : input;
+    return ExpressionTools.explain(expression, style, this.previewSafe(expression));
+  }
+
+  preview(input: string | Expression, context: EvalContext = {}, style: ExplainStyle = 'compact') {
+    const result = this.partialEvaluate(input, context);
+    return result.status === 'error' ? result : { ...result, explanation: this.explain(result.expression, style) };
   }
 
   static evaluate(

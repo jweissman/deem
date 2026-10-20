@@ -8,6 +8,8 @@ import { traceEvent, type ExecutionTrace } from "./trace";
 export type GenerationSetting = Record<string, Template | Table>;
 export type LookupInTableOptions = {
   condition?: string;
+  strict?: boolean;
+  evaluateCondition?: (expression: string, context: Record<string, DeemValue>) => DeemValue;
   context?: Record<string, DeemValue>;
   setting?: GenerationSetting;
   trace?: ExecutionTrace;
@@ -186,9 +188,9 @@ export default class Generator {
 
     if (condition) {
       const conditionMatches = availableOptions.map((option) => {
-        const conditionResult = Deem.evaluate(condition, {
-          __it: option,
-          ...context
+        const conditionResult = (options.evaluateCondition ?? Deem.evaluate)(condition, {
+          ...context,
+          __it: option
         });
         return {
           option,
@@ -205,6 +207,9 @@ export default class Generator {
       });
 
       if (filteredOptions.length === 0) {
+        if (options.strict) {
+          throw new Error(`No matching options in ${tableName}[${groupName}] for condition: ${condition}`);
+        }
         console.warn(`No options in group ${groupName} of table ${tableName} satisfy condition: ${condition} -- returning first available option.`, { npc_role: context.npc_role });
         const fallback = availableOptions[0];
         if (fallback === undefined) {

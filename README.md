@@ -213,3 +213,101 @@ There is also a special directive `__no_id` which omits the generation of a temp
 ### Words
 - `capitalize(string)` returns the given string value with the first character capitalized
 - `humanize(string)` 'humanizes' a string, removing underscores and splitting camelCase and then capitalizing each word
+## Expressions before execution
+
+`Deem` instances also expose `parse`, `partialEvaluate`, `explain`, `preview`,
+`serialize`, and `execute`. Existing `evaluate` behavior is unchanged.
+
+```ts
+const deem = new Deem({ seed: 'combat' });
+const before = deem.preview(
+  "2d6 + #modifier + (dig(#target, 'isUndead') ? 3 : 0)",
+  { modifier: 4 },
+);
+if (before.status !== 'error') {
+  const after = deem.preview(before.expression, { target: { isUndead: true } });
+  if (after.status !== 'error') {
+    console.log(after.explanation.text);   // ((2d6 + 4) + 3) (9 to 19)
+    console.log(after.explanation.bounds); // { min: 9, max: 19 }
+    const damage = deem.execute(after.expression); // First random draws occur here.
+  }
+}
+```
+
+Run `bun examples/ability-preview.ts` for an executable example with original and
+specialized execution using identical seeds.
+
+`partialEvaluate(string | Expression, context)` returns a discriminated result:
+`{ status: 'value', value, expression }`, `{ status: 'residual', expression }`, or
+`{ status: 'error', error, expression? }`. The exported `Expression` union has
+value, reference, dice, operation, and opaque nodes. Missing references remain
+reference nodes; dice remain dice nodes. Deferred calls retain their function
+names and argument trees. Opaque nodes include the reason for deferral.
+
+`explain(string | Expression, style?)` returns `{ expression, text, bounds?,
+unresolved }`. Styles are `compact` (default), `descriptive`, and `technical`.
+Single-die bounded arithmetic can use a compact range; multiple dice retain
+notation/mechanics alongside the range, so `2d6` and `1d11 + 1` remain distinct.
+Bounds are finite numerical enclosures, not probability distributions or a
+promise that every value inside the interval is attainable. Bounds currently
+cover numeric constants, ordinary dice, unary signs, addition, subtraction, and
+multiplication. Unsupported operations have no bounds. Text is a basic renderer,
+not a complete natural-language grammar; callers should inspect `unresolved`
+before using fallback function syntax or interpolated strings in player UI.
+
+`preview(input, context, style?)` composes specialization and explanation. It
+returns the partial result with an `explanation` on success. `execute(tree,
+remainingContext?)` evaluates through the existing evaluator. `serialize(tree,
+remainingContext?)` returns `{ source, context }` that can be passed to
+`evaluate(source, context)`. The accompanying bindings are required: Deem syntax
+cannot express arbitrary object literals, nonfinite numbers, or all strings.
+Trees retain values directly, including object identity; they are inspectable
+in-memory representations, not a general JSON persistence format.
+
+### Semantics and current limits
+
+The expression tree is derived from the existing Ohm grammar. There is no second
+parser or evaluator: constant folding and execution use the original evaluator.
+The previous `pretty` attribute formats parse trees but cannot encode arbitrary
+resolved values, so it is insufficient for residual-expression round trips.
+
+* Context references use `#name`; bare names are string values. Property access
+  uses `dig(#target, 'isUndead')`. The existing grammar parses `d6` as an identifier
+  before considering dice; use `1d6`. This compatibility quirk is unchanged.
+* Missing references normally throw during execution. Previews preserve them.
+  Explicit null/undefined follows legacy evaluation: nullish context values fall
+  back to magic variables; present undefined without a fallback becomes null.
+  Absence remains unknown rather than becoming null. `dig` on a known object with
+  a missing property returns null, as in ordinary evaluation.
+* Arithmetic retains grouping and JavaScript coercion, including unary `+`'s
+  legacy identity behavior. `1d6 + #strength + 2` with strength 4 becomes
+  `(1d6 + 4) + 2`, not `1d6 + 6`. No reassociation, cancellation, or random-draw
+  elimination is performed. Known lazy conditions select only the required
+  branch; errors behind unresolved predecessors remain deferred. The `if()`
+  function stays eager, unlike the ternary operator.
+* Unmodified built-in core functions are eligible for folding when arguments are
+  known. Probability functions (`rand`, `roll`, `pick`, `sample`, `oneOf`,
+  `rollWithDrop`, `alliterate`) stay deferred. Explicit `roll()` is currently a
+  deferred call rather than a dice node, with no inferred bounds.
+* Custom functions, overridden core functions, lookup/generation helpers,
+  double-quoted interpolation, and contextual dispatch are not invoked by a
+  preview. An expression containing such a node is conservatively preserved in
+  its entirety, since a call could mutate context before another reference is
+  read. Contextual callbacks are never invoked to discover their capabilities.
+  Dice with a custom/contextual roll implementation have no inferred bounds.
+  Known short-circuits around unsupported nodes are also left unchanged in this
+  first implementation. A future explicit purity/capability registry could
+  permit more reduction without guessing from function names.
+* Supply plain Deem data, and treat known context, magic variables, core function
+  implementations, and resolved object values as stable for the lifetime of a
+  specialization. Rebuild previews when actor state changes. Accessor-bearing
+  objects and external mutations are outside the preview contract. Switching to
+  a different runtime/function implementation can also invalidate a preview.
+
+For Kyr, keep the original expression as the rule source. Build a preview with
+actor context, specialize its tree again when a target is selected, and render
+`explanation.text` with optional structured bounds and unresolved-state UI.
+Execute the resulting tree only on ability use, with the same runtime function
+semantics and remaining context. Recompute from the original expression when a
+previously known attribute changes. No separate player description formula or
+Kyr changes are required by these APIs.

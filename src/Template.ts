@@ -56,6 +56,13 @@ export class Template {
             { condition, context: activeContext, setting, randomFunc, trace },
           );
         }) as DeemFunc,
+        select: ((tableName: GenerationTemplateType, groupName: string = 'default', condition?: string) =>
+          Generator.lookupInTable(tableName, groupName, false, {
+            condition, context: activeContext, setting, trace, strict: true,
+            randomFunc: (max: number) => (runtime.stdlib.rand as ((max: number) => number))(max),
+            evaluateCondition: (expression, candidateContext) => runtime.evaluate(expression, candidateContext),
+          })) as DeemFunc,
+
         lookupUnique: ((tableName: GenerationTemplateType, groupName: string) =>
           Generator.lookupInTable(tableName, groupName, true, { setting, trace })
         ) as DeemFunc,
@@ -101,12 +108,12 @@ export class Template {
           tableName: GenerationTemplateType, count: number = -1, condition?: string
         ) => Generator.gatherKeysFromTable(tableName, count, condition, setting)) as DeemFunc,
 
-        gen: ((type: GenerationTemplateType) => {
-          return Generator.gen(type, {
-            ...activeContext,
-            __deemRuntime: runtime,
-            __setting: setting,
-            __trace: trace,
+        gen: ((type: GenerationTemplateType, parameters: DeemValue = {}) => {
+          if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)) {
+            throw new Error('gen() parameters must be an object');
+          }
+          return Generator.gen(type, { ...activeContext, ...parameters,
+            __deemRuntime: runtime, __setting: setting, __trace: trace,
           });
         }) as DeemFunc,
         genIsolated: ((type: GenerationTemplateType) => {

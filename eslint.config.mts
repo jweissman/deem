@@ -93,7 +93,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['src/deem.ts'],
+    files: ['src/deem.ts', 'src/preview.ts'],
     rules: {
       'max-lines-per-function': 'off',
       'max-params': 'off',
