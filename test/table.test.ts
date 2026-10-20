@@ -37,3 +37,10 @@ describe('Table', () => {
     expect(table.findGroupForValue('missing')).toBeNull();
   });
 });
+
+it('expands weighted rows into the same draws as repeated rows', () => {
+  const repeated = new Table('r', 'k').group('g', [{ a: 1 }, { a: 1 }, { a: 1 }, { a: 2 }, 'x', 'x']);
+  const weighted = new Table('w', 'k').group('g', [{ __weight: 3, a: 1 }, { a: 2 }, { __weight: 2, __value: 'x' }]);
+  expect(weighted.optionsForPick('g')).toEqual(repeated.optionsForPick('g'));
+  expect(() => new Table('bad', 'k').group('g', [{ __weight: 0, a: 1 }])).toThrow('positive integer');
+});

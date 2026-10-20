@@ -262,6 +262,12 @@ const loadAndValidateTableData = (
         if (Array.isArray(groupValue) && groupValue.length === 0) {
           errors.push(`Table "${tableName}" group "${groupName}" cannot be an empty array.`);
         }
+        for (const row of Array.isArray(groupValue) ? groupValue : []) {
+          const weight = Table.weighted(row) ? (row as Record<string, unknown>).__weight : 1;
+          if (typeof weight !== 'number' || !Number.isInteger(weight) || weight < 1) {
+            errors.push(`Table "${tableName}" group "${groupName}" has a __weight that is not a positive integer.`);
+          }
+        }
       }
     }
 

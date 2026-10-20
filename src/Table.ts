@@ -5,9 +5,22 @@ export class Table {
 
   constructor(public name: string, public discriminator: string) { }
 
+  // A row may carry a frequency: {"__weight": 3, ...} counts as three copies of the row without the field, and
+  // {"__weight": 3, "__value": x} as three copies of x. Weighted and repeated rows draw identically.
   group(name: string, items: DeemValue[]): this {
-    this.groups[name] = items;
+    this.groups[name] = items.flatMap(item => {
+      if (!Table.weighted(item)) { return [item]; }
+      const { __weight: weight, ...rest } = item as Record<string, DeemValue>;
+      if (typeof weight !== 'number' || !Number.isInteger(weight) || weight < 1) {
+        throw new Error(`Table ${this.name} group ${name}: __weight must be a positive integer`);
+      }
+      const row = '__value' in rest ? rest.__value as DeemValue : rest;
+      return Array.from({ length: weight }, () => row);
+    });
     return this;
+  }
+  static weighted(item: DeemValue): boolean {
+    return typeof item === 'object' && item !== null && !Array.isArray(item) && '__weight' in item;
   }
 
   gatherKeys(count: number, randomFunc: (maxValue: number) => number = (max) => Math.floor(Math.random() * max)): string[] {
