@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import Generator, { type GeneratedValue, type GenerationSetting } from './Generator';
@@ -150,7 +151,7 @@ const validateRunConfig = (config: RunConfigFile): string[] => {
   return errors;
 };
 
-const resolveRunOptions = (options: RunCliOptions): ValidateResult => {
+const resolveRunOptions = (options: RunCliOptions, requireType = true): ValidateResult => {
   const errors: string[] = [];
   const settingDir = resolve(options.settingDir ?? process.cwd());
   const configPath = resolve(options.configPath ?? join(settingDir, 'deem.run.json'));
@@ -183,11 +184,11 @@ const resolveRunOptions = (options: RunCliOptions): ValidateResult => {
   const templatesPath = resolvePath(settingDir, candidateTemplatesPath);
 
   const type = options.type ?? runConfig.type;
-  if (!type || typeof type !== 'string') {
+  if (requireType && (!type || typeof type !== 'string')) {
     errors.push('No generation type provided. Set "type" in deem.run.json or pass --type.');
   }
 
-  const seedCandidate = options.seed ?? runConfig.seed ?? 'default-seed';
+  const seedCandidate = options.seed ?? runConfig.seed ?? randomUUID();
   if (typeof seedCandidate !== 'string') {
     errors.push('Seed must be a string.');
   }
@@ -386,7 +387,6 @@ export const initProject = (initOptions: InitProjectOptions): string[] => {
       payload: {
         scenario,
         type: 'room',
-        seed: 'demo-seed',
         count: 1,
         trace: true,
       },
@@ -440,6 +440,20 @@ const loadSetting = (resolved: ResolvedRunOptions): { setting: GenerationSetting
     setting: buildSetting(tableResult.tables, templateResult.templates),
     errors,
   };
+};
+
+export const listTemplates = (options: RunCliOptions = {}): string[] => {
+  const result = resolveRunOptions(options, false);
+  if (!result.ok || !result.resolved) {
+    throw new Error(result.errors.join('\n'));
+  }
+  const loaded = loadSetting(result.resolved);
+  if (loaded.errors.length > 0) {
+    throw new Error(loaded.errors.join('\n'));
+  }
+  return Object.keys(loaded.setting)
+    .filter((name) => loaded.setting[name] instanceof Template)
+    .sort();
 };
 
 export const validateProject = (options: RunCliOptions = {}): ValidateResult => {

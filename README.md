@@ -24,7 +24,16 @@ This writes:
 
 ```bash
 deem run --settingDir ./example
+deem gen room --settingDir ./example
+deem g room --settingDir ./example
 ```
+
+`gen` and `g` are aliases for `run` and accept the template as a positional
+argument. An explicit `--type` takes precedence over the positional template.
+
+Each run uses a random seed unless `--seed` or a `seed` in `deem.run.json` is
+provided. Supply a fixed seed for reproducible generation. Newly initialized
+projects omit the seed so generation varies by default.
 
 Optional flags:
 
@@ -36,9 +45,34 @@ Optional flags:
 - `--tables <path>`
 - `--templates <path>`
 - `--settingDir <dir>`
+- `--debug` (prints timings and the resolved seed to stderr)
 - `--trace` (prints execution trace)
 - `--trace-format <pretty|raw>` (default `pretty`)
 - `--allow-default-setting` (fallback to built-in setting if scenario files are missing)
+
+`--debug` works with `run`, `gen`, and `g`, independently of `--trace`:
+
+```bash
+deem g room --debug
+```
+
+It reports generation time (including config validation and setting loading),
+JSON serialization/write time, and total command time in milliseconds. Total
+includes trace formatting when enabled, and excludes process startup. Failed
+runs report elapsed total time. The resolved seed is printed on successful runs
+so a random run can be replayed with `--seed`. Generated JSON stays on stdout.
+
+### List generation templates
+
+```bash
+deem list --settingDir ./example
+```
+
+Prints template names alphabetically, one per line (for the example: `encounter`
+and `room`). Uses the same configuration, scenario, and file path resolution as
+`run`, and validates the setting's JSON structure. Tables are excluded. No
+configured generation type is required. Supports `--scenario`, `--config`,
+`--settingDir`, `--tables`, `--templates`, and `--allow-default-setting`.
 
 ### Validate configuration
 

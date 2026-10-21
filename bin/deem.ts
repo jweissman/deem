@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { initProject, runGeneration, type RunCliOptions, validateProject } from '../src/cli';
+import { initProject, listTemplates, runGeneration, type RunCliOptions, validateProject } from '../src/cli';
 import { formatTracePretty, formatTraceRaw } from '../src/trace';
 
 type ParsedArgs = {
@@ -51,13 +51,17 @@ const printHelp = (): void => {
       '',
       'Usage:',
       '  deem init [dir] [--scenario <name>] [--force]',
-      '  deem run [--type <template>] [--seed <seed>] [--count <n>] [--trace] [--trace-format <pretty|raw>] [--allow-default-setting] [--scenario <name>] [--config <file>] [--settingDir <dir>] [--tables <file>] [--templates <file>]',
+      '  deem run [--type <template>] [--seed <seed>] [--count <n>] [--debug] [--trace] [--trace-format <pretty|raw>] [--allow-default-setting] [--scenario <name>] [--config <file>] [--settingDir <dir>] [--tables <file>] [--templates <file>]',
+      '  deem gen <template> [options] (alias: g; accepts the same options as run)',
+      '  deem list [--allow-default-setting] [--scenario <name>] [--config <file>] [--settingDir <dir>] [--tables <file>] [--templates <file>]',
       '  deem validate [--type <template>] [--allow-default-setting] [--scenario <name>] [--config <file>] [--settingDir <dir>] [--tables <file>] [--templates <file>]',
       '',
       'Examples:',
       '  deem init ./example --scenario default',
       '  deem run --settingDir ./example',
+      '  deem g room --settingDir ./example',
       '  deem run --settingDir ./example --trace --trace-format pretty',
+      '  deem list --settingDir ./example',
       '  deem validate --settingDir ./example',
       '',
     ].join('\n'),
@@ -95,7 +99,7 @@ const runInit = (args: ParsedArgs): number => {
 
 const runGen = (args: ParsedArgs): number => {
   const options: RunCliOptions = {
-    type: typeof args.options.type === 'string' ? args.options.type : undefined,
+    type: typeof args.options.type === 'string' ? args.options.type : args.positional[0],
     seed: typeof args.options.seed === 'string' ? args.options.seed : undefined,
     count: asInt(args.options.count),
     trace: args.options.trace === true ? true : undefined,
@@ -107,9 +111,18 @@ const runGen = (args: ParsedArgs): number => {
     templatesPath: typeof args.options.templates === 'string' ? args.options.templates : undefined,
   };
 
+  const debug = args.options.debug === true;
+  const started = performance.now();
+  let generated: number | undefined;
+  let written: number | undefined;
   try {
     const result = runGeneration(options);
+    generated = performance.now();
     process.stdout.write(`${JSON.stringify(result.output, null, 2)}\n`);
+    written = performance.now();
+    if (debug) {
+      process.stderr.write(`[deem debug] seed=${JSON.stringify(result.resolved.seed)}\n`);
+    }
 
     if (result.resolved.trace) {
       const traceFormat =
@@ -126,6 +139,14 @@ const runGen = (args: ParsedArgs): number => {
     const msg = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${msg}\n`);
     return 1;
+  } finally {
+    if (debug) {
+      const finished = performance.now();
+      const timings = generated !== undefined && written !== undefined
+        ? `generation=${(generated - started).toFixed(2)}ms output=${(written - generated).toFixed(2)}ms `
+        : '';
+      process.stderr.write(`[deem debug] ${timings}total=${(finished - started).toFixed(2)}ms\n`);
+    }
   }
 };
 
@@ -139,6 +160,17 @@ const runValidate = (args: ParsedArgs): number => {
     tablesPath: typeof args.options.tables === 'string' ? args.options.tables : undefined,
     templatesPath: typeof args.options.templates === 'string' ? args.options.templates : undefined,
   };
+
+  if (args.command === 'list') {
+    try {
+      const templates = listTemplates(options);
+      process.stdout.write(templates.length > 0 ? `${templates.join('\n')}\n` : 'No generation templates found.\n');
+      return 0;
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      return 1;
+    }
+  }
 
   const result = validateProject(options);
   if (!result.ok) {
@@ -167,11 +199,11 @@ const main = (): number => {
     return runInit(args);
   }
 
-  if (args.command === 'run') {
+  if (args.command === 'run' || args.command === 'gen' || args.command === 'g') {
     return runGen(args);
   }
 
-  if (args.command === 'validate') {
+  if (args.command === 'validate' || args.command === 'list') {
     return runValidate(args);
   }
 
