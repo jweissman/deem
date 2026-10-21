@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import Generator, { type GeneratedValue, type GenerationSetting } from './Generator';
 import { Table } from './Table';
@@ -71,8 +71,28 @@ type RunConfigFile = {
 };
 
 const parseJsonFile = (path: string): JsonObject => {
+  if (statSync(path).isDirectory()) {
+    return parseJsonDirectory(path);
+  }
   const raw = readFileSync(path, 'utf8');
   return JSON.parse(raw) as JsonObject;
+};
+
+const parseJsonDirectory = (path: string): JsonObject => {
+  const merged: Record<string, unknown> = {};
+  for (const name of readdirSync(path).filter(file => file.endsWith('.json')).sort()) {
+    const part = JSON.parse(readFileSync(join(path, name), 'utf8')) as unknown;
+    if (typeof part !== 'object' || part === null || Array.isArray(part)) {
+      throw new Error(`${join(path, name)} must be a JSON object`);
+    }
+    for (const [key, value] of Object.entries(part)) {
+      if (key in merged) {
+        throw new Error(`${key} is defined twice in ${path}`);
+      }
+      merged[key] = value;
+    }
+  }
+  return merged as JsonObject;
 };
 
 const ensureArray = (value: DeemValue | DeemValue[]): DeemValue[] => {
@@ -97,6 +117,12 @@ const defaultScenarioPath = (
 ): string => {
   const filename = kind === 'tables' ? 'deem.tables.json' : 'deem.templates.json';
   return join(settingDir, 'data', scenario, kind, filename);
+};
+
+const readablePath = (file: string): string => {
+  const folder = dirname(file);
+  return existsSync(file) || !existsSync(folder) || !statSync(folder).isDirectory()
+    || !readdirSync(folder).some(name => name.endsWith('.json')) ? file : folder;
 };
 
 const legacyPath = (settingDir: string, kind: 'tables' | 'templates'): string => {
@@ -167,8 +193,8 @@ const resolveRunOptions = (options: RunCliOptions, requireType = true): Validate
   }
   const scenario = options.scenario ?? runConfig.scenario ?? 'default';
 
-  const scenarioTablesPath = defaultScenarioPath(settingDir, scenario, 'tables');
-  const scenarioTemplatesPath = defaultScenarioPath(settingDir, scenario, 'templates');
+  const scenarioTablesPath = readablePath(defaultScenarioPath(settingDir, scenario, 'tables'));
+  const scenarioTemplatesPath = readablePath(defaultScenarioPath(settingDir, scenario, 'templates'));
   const fallbackTablesPath = legacyPath(settingDir, 'tables');
   const fallbackTemplatesPath = legacyPath(settingDir, 'templates');
 

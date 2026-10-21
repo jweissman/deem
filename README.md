@@ -20,6 +20,12 @@ This writes:
 - `data/default/templates/deem.templates.json`
 - `deem.run.json`
 
+A larger setting can split its tables and templates by domain instead: when a
+scenario has no `deem.tables.json` (or `deem.templates.json`), every `*.json`
+file in its `tables/` (or `templates/`) folder is read and merged, in name
+order. A table or template defined in two files is an error. `--tables` and
+`--templates` may also name such a folder.
+
 ### Generate from the CLI
 
 ```bash
