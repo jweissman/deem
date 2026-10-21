@@ -3,10 +3,10 @@ import Deem from "./deem";
 import { type DeemFunc, type DeemValue } from "./stdlib";
 import Generator, { type GenerationSetting, type GeneratorOptions } from "./Generator";
 // import { StatusModifications } from "./Status";
-import { Table } from "./Table";
 import { type GenerationTemplateType } from "./GenerationTemplateType";
 import deepCopy from "./deepCopy";
 import { traceEvent, type ExecutionTrace, withTraceScope } from "./trace";
+import { Constraints } from "./constraints";
 
 export type TemplateProps = Record<string, string | number | boolean | object>;
 export class Template {
@@ -73,42 +73,10 @@ export class Template {
           Generator.lookupInTable(tableName, groupName, true, { setting, trace })
         ) as DeemFunc,
 
-        gatherEntries: ((tableName: GenerationTemplateType, groupName: string, count: number = -1) => {
-          const table = Generator.generationSource(tableName, setting);
-          if (!table || !(table instanceof Table)) {
-            throw new Error(`Table not found: ${tableName}`);
-          }
+        ...Constraints.functions(activeContext, setting, () => {
           const rand = runtime.stdlib.rand as ((max?: number) => number) | undefined;
-          const randomFunc = (maxValue: number) => {
-            if (!rand) {
-              return Math.floor(Math.random() * maxValue);
-            }
-            return rand(maxValue) as number;
-          };
-          return table.gatherEntries(groupName, count, randomFunc);
-        }) as DeemFunc,
-
-        hasEntry: ((tableName: GenerationTemplateType, groupName: string) => {
-          const table = Generator.generationSource(tableName, setting);
-          if (!table || !(table instanceof Table)) {
-            throw new Error(`Table not found: ${tableName}`);
-          }
-          return table.hasGroup(groupName);
-        }) as DeemFunc,
-        hasValue: ((tableName: GenerationTemplateType, value: DeemValue) => {
-          const table = Generator.generationSource(tableName, setting);
-          if (!table || !(table instanceof Table)) {
-            throw new Error(`Table not found: ${tableName}`);
-          }
-          return table.containsValue(value);
-        }) as DeemFunc,
-        findGroup: ((tableName: GenerationTemplateType, value: DeemValue) => {
-          const table = Generator.generationSource(tableName, setting);
-          if (!table || !(table instanceof Table)) {
-            throw new Error(`Table not found: ${tableName}`);
-          }
-          return table.findGroupForValue(value);
-        }) as DeemFunc,
+          return (maxValue: number) => rand ? rand(maxValue) as number : Math.floor(Math.random() * maxValue);
+        }),
 
         gather: ((
           tableName: GenerationTemplateType, count: number = -1, condition?: string

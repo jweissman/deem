@@ -223,12 +223,14 @@ There is also a special directive `__no_id` which omits the generation of a temp
 - `findGroup(tableName, value)` does a reverse lookup of the group in a table from the value list
 - `gatherEntries(tableName, group)` returns a group's entries; `default` (when the table has no group of that name) returns every entry
 - `select(tableName, group, predicate)` selects as `lookup` does among rows for which the single-quoted predicate holds (the candidate is `#__it`), and fails when none does
+- `fits(row, name...)` says whether a row agrees with what the context asks: for each named dimension the context defines, the row's field of that name equals it, or the row's `_<name>s` map holds it (`{"_terrains": {"cave": true}}` fits `terrain` `cave`). Dimensions the context leaves undefined constrain nothing, so `select(kinds, animal, 'fits(#__it, "terrain", "body")')` reads as the constraint it is
+- `owns(tableName, group)` says whether a group holds every name the context defines among all of the table's entries: with a table of the dimensions each family owns, `select(families, any, 'owns(dimensions, #__it)')` picks only a family that can honour every dimension asked for
 
 ### List helpers
 - `concat(item1, item2...)` flattens all arguments into a single array and removes null/undefined
 - `uniq(arr)` returns only unique items from an array
 - `except(list, removed)` returns the elements of `list` that are not in `removed`
-- `definedOf(names)` returns the names that are defined in the current context. Together with the table helpers this asks whether a candidate owns every requested dimension: `select(families, any, 'count(definedOf(except(gatherEntries(owners, "default"), gatherEntries(owners, #__it)))) == 0')`
+- `definedOf(names)` returns the names that are defined in the current context (`owns` is the common use of it, by name)
 - `distribute(total, parts)` returns an array distributing the total value into buckets (countof buckets given by `parts`)
 
 ### Value extraction
